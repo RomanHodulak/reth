@@ -7,7 +7,7 @@ use reth_db_api::{
     transaction::DbTx,
 };
 use reth_provider::{BlockNumReader, HeaderProvider, ProviderError};
-use reth_trie::StateRoot;
+use reth_trie_db::state_root;
 use tracing::*;
 
 /// `reth recover storage-tries` command
@@ -44,7 +44,7 @@ impl Command {
             entry = storage_trie_cursor.next()?;
         }
 
-        let state_root = StateRoot::from_tx(tx_mut).root()?;
+        let state_root = state_root::from_tx(tx_mut).root()?;
         if state_root != best_header.state_root {
             eyre::bail!(
                 "Recovery failed. Incorrect state root. Expected: {:?}. Received: {:?}",

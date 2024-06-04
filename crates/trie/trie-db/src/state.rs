@@ -1,9 +1,4 @@
-use crate::{
-    hashed_cursor::HashedPostStateCursorFactory,
-    prefix_set::{PrefixSetMut, TriePrefixSets},
-    updates::TrieUpdates,
-    Nibbles, StateRoot,
-};
+use crate::{hashed_cursor::HashedPostStateCursorFactory, state_root, trie_cursor::DbTxRefWrapper};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use reth_db::{tables, DatabaseError};
 use reth_db_api::{
@@ -13,6 +8,10 @@ use reth_db_api::{
 };
 use reth_execution_errors::StateRootError;
 use reth_primitives::{keccak256, Account, Address, BlockNumber, B256, U256};
+use reth_trie::{
+    prefix_set::{PrefixSetMut, TriePrefixSets},
+    updates::TrieUpdates,
+};
 use revm::db::BundleAccount;
 use std::{
     collections::{hash_map, HashMap, HashSet},
@@ -214,7 +213,7 @@ impl HashedPostState {
     /// use reth_db::test_utils::create_test_rw_db;
     /// use reth_db_api::database::Database;
     /// use reth_primitives::{Account, U256};
-    /// use reth_trie::HashedPostState;
+    /// use reth_trie_db::HashedPostState;
     ///
     /// // Initialize the database
     /// let db = create_test_rw_db();
@@ -237,8 +236,11 @@ impl HashedPostState {
     pub fn state_root<TX: DbTx>(&self, tx: &TX) -> Result<B256, StateRootError> {
         let sorted = self.clone().into_sorted();
         let prefix_sets = self.construct_prefix_sets();
-        StateRoot::from_tx(tx)
-            .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(tx, &sorted))
+        state_root::from_tx(tx)
+            .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
+                DbTxRefWrapper::from(tx),
+                &sorted,
+            ))
             .with_prefix_sets(prefix_sets)
             .root()
     }
@@ -251,8 +253,11 @@ impl HashedPostState {
     ) -> Result<(B256, TrieUpdates), StateRootError> {
         let sorted = self.clone().into_sorted();
         let prefix_sets = self.construct_prefix_sets();
-        StateRoot::from_tx(tx)
-            .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(tx, &sorted))
+        state_root::from_tx(tx)
+            .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
+                DbTxRefWrapper::from(tx),
+                &sorted,
+            ))
             .with_prefix_sets(prefix_sets)
             .root_with_updates()
     }

@@ -15,6 +15,7 @@ use reth_primitives::{
 };
 use reth_storage_errors::provider::ProviderResult;
 use reth_trie::{updates::TrieUpdates, AccountProof, HashedPostState};
+use reth_trie_db::HashedPostState;
 use revm::db::BundleState;
 use std::fmt::Debug;
 

@@ -9,6 +9,7 @@ use reth_db_api::{
     DatabaseError,
 };
 use reth_primitives::{keccak256, BlockNumber, StorageEntry, B256};
+use reth_trie::prefix_set::{PrefixSetMut, TriePrefixSets};
 use std::{
     collections::{HashMap, HashSet},
     ops::RangeInclusive,

@@ -1,6 +1,6 @@
-use super::{HashedCursor, HashedCursorFactory, HashedStorageCursor};
-use crate::{HashedAccountsSorted, HashedPostStateSorted, HashedStorageSorted};
+use crate::HashedPostStateSorted;
 use reth_primitives::{Account, B256, U256};
+use reth_trie::hashed_cursor::{HashedCursor, HashedCursorFactory, HashedStorageCursor};
 
 /// The hashed cursor factory for the post state.
 #[derive(Debug, Clone)]
@@ -17,10 +17,11 @@ impl<'a, CF> HashedPostStateCursorFactory<'a, CF> {
 }
 
 impl<'a, CF: HashedCursorFactory> HashedCursorFactory for HashedPostStateCursorFactory<'a, CF> {
+    type Err = CF::Err;
     type AccountCursor = HashedPostStateAccountCursor<'a, CF::AccountCursor>;
     type StorageCursor = HashedPostStateStorageCursor<'a, CF::StorageCursor>;
 
-    fn hashed_account_cursor(&self) -> Result<Self::AccountCursor, reth_db::DatabaseError> {
+    fn hashed_account_cursor(&self) -> Result<Self::AccountCursor, Self::Err> {
         let cursor = self.cursor_factory.hashed_account_cursor()?;
         Ok(HashedPostStateAccountCursor::new(cursor, &self.post_state.accounts))
     }
@@ -28,7 +29,7 @@ impl<'a, CF: HashedCursorFactory> HashedCursorFactory for HashedPostStateCursorF
     fn hashed_storage_cursor(
         &self,
         hashed_address: B256,
-    ) -> Result<Self::StorageCursor, reth_db::DatabaseError> {
+    ) -> Result<Self::StorageCursor, Self::Err> {
         let cursor = self.cursor_factory.hashed_storage_cursor(hashed_address)?;
         Ok(HashedPostStateStorageCursor::new(cursor, self.post_state.storages.get(&hashed_address)))
     }
@@ -92,6 +93,7 @@ impl<'a, C> HashedCursor for HashedPostStateAccountCursor<'a, C>
 where
     C: HashedCursor<Value = Account>,
 {
+    type Err = C::Err;
     type Value = Account;
 
     /// Seek the next entry for a given hashed account key.
@@ -102,7 +104,7 @@ where
     ///
     /// The returned account key is memoized and the cursor remains positioned at that key until
     /// [`HashedCursor::seek`] or [`HashedCursor::next`] are called.
-    fn seek(&mut self, key: B256) -> Result<Option<(B256, Self::Value)>, reth_db::DatabaseError> {
+    fn seek(&mut self, key: B256) -> Result<Option<(B256, Self::Value)>, Self::Err> {
         self.last_account = None;
 
         // Take the next account from the post state with the key greater than or equal to the
@@ -147,7 +149,7 @@ where
     ///
     /// NOTE: This function will not return any entry unless [`HashedCursor::seek`] has been
     /// called.
-    fn next(&mut self) -> Result<Option<(B256, Self::Value)>, reth_db::DatabaseError> {
+    fn next(&mut self) -> Result<Option<(B256, Self::Value)>, Self::Err> {
         let last_account = match self.last_account.as_ref() {
             Some(account) => account,
             None => return Ok(None), // no previous entry was found
@@ -249,13 +251,11 @@ impl<'a, C> HashedCursor for HashedPostStateStorageCursor<'a, C>
 where
     C: HashedStorageCursor<Value = U256>,
 {
+    type Err = C::Err;
     type Value = U256;
 
     /// Seek the next account storage entry for a given hashed key pair.
-    fn seek(
-        &mut self,
-        subkey: B256,
-    ) -> Result<Option<(B256, Self::Value)>, reth_db::DatabaseError> {
+    fn seek(&mut self, subkey: B256) -> Result<Option<(B256, Self::Value)>, Self::Err> {
         // Attempt to find the account's storage in post state.
         let mut post_state_entry = None;
         if let Some(storage) = self.post_state_storage {
@@ -305,7 +305,7 @@ where
     ///
     /// If the account key is not set. [`HashedCursor::seek`] must be called first in order to
     /// position the cursor.
-    fn next(&mut self) -> Result<Option<(B256, Self::Value)>, reth_db::DatabaseError> {
+    fn next(&mut self) -> Result<Option<(B256, Self::Value)>, Self::Err> {
         let last_slot = match self.last_slot.as_ref() {
             Some(slot) => slot,
             None => return Ok(None), // no previous entry was found
@@ -354,7 +354,7 @@ where
     ///
     /// This function should be called before attempting to call [`HashedCursor::seek`] or
     /// [`HashedCursor::next`].
-    fn is_storage_empty(&mut self) -> Result<bool, reth_db::DatabaseError> {
+    fn is_storage_empty(&mut self) -> Result<bool, C::Err> {
         let is_empty = match self.post_state_storage {
             Some(storage) => {
                 // If the storage has been wiped at any point

@@ -7,12 +7,15 @@ use reth_primitives::B256;
 use reth_provider::{providers::ConsistentDbView, DatabaseProviderFactory, ProviderError};
 use reth_tasks::pool::BlockingTaskPool;
 use reth_trie::{
-    hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
+    hashed_cursor::HashedCursorFactory,
     node_iter::{TrieElement, TrieNodeIter},
     trie_cursor::TrieCursorFactory,
     updates::TrieUpdates,
     walker::TrieWalker,
     HashBuilder, HashedPostState, Nibbles, StorageRoot, TrieAccount,
+};
+use reth_trie_db::{
+    hashed_cursor::HashedPostStateCursorFactory, trie_cursor::DbTxRefWrapper, HashedPostState,
 };
 use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
@@ -108,8 +111,11 @@ where
                 self.blocking_pool.spawn_fifo(move || -> Result<_, AsyncStateRootError> {
                     let provider = view.provider_ro()?;
                     Ok(StorageRoot::new_hashed(
-                        provider.tx_ref(),
-                        HashedPostStateCursorFactory::new(provider.tx_ref(), &hashed_state_sorted),
+                        DbTxRefWrapper::from(provider.tx_ref()),
+                        HashedPostStateCursorFactory::new(
+                            DbTxRefWrapper::from(provider.tx_ref()),
+                            &hashed_state_sorted,
+                        ),
                         hashed_address,
                         #[cfg(feature = "metrics")]
                         metrics,
@@ -125,8 +131,9 @@ where
 
         let provider_ro = self.view.provider_ro()?;
         let tx = provider_ro.tx_ref();
-        let hashed_cursor_factory = HashedPostStateCursorFactory::new(tx, &hashed_state_sorted);
-        let trie_cursor_factory = tx;
+        let hashed_cursor_factory =
+            HashedPostStateCursorFactory::new(DbTxRefWrapper::from(tx), &hashed_state_sorted);
+        let trie_cursor_factory = DbTxRefWrapper::from(tx);
 
         let walker = TrieWalker::new(
             trie_cursor_factory.account_trie_cursor().map_err(ProviderError::Database)?,
@@ -155,7 +162,7 @@ where
                         None => {
                             tracker.inc_missed_leaves();
                             StorageRoot::new_hashed(
-                                trie_cursor_factory,
+                                DbTxRefWrapper::from(tx),
                                 hashed_cursor_factory.clone(),
                                 hashed_address,
                                 #[cfg(feature = "metrics")]

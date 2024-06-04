@@ -1,14 +1,13 @@
 use crate::{
-    walker::TrieWalker, BranchNodeCompact, HashBuilder, Nibbles, StorageTrieEntry,
-    StoredBranchNode, StoredNibbles, StoredNibblesSubKey,
+    trie_cursor::{TrieCursor, TrieCursorRwFactory},
+    walker::TrieWalker,
 };
 use derive_more::Deref;
-use reth_db::tables;
-use reth_db_api::{
-    cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO, DbDupCursorRW},
-    transaction::{DbTx, DbTxMut},
-};
 use reth_primitives::B256;
+use reth_trie_common::{
+    BranchNodeCompact, HashBuilder, Nibbles, StorageTrieEntry, StoredBranchNode, StoredNibbles,
+    StoredNibblesSubKey,
+};
 use std::collections::{hash_map::IntoIter, HashMap, HashSet};
 
 /// The key of a trie node.
@@ -167,13 +166,14 @@ impl TrieUpdates {
     }
 
     /// Flush updates all aggregated updates to the database.
-    pub fn flush(self, tx: &(impl DbTx + DbTxMut)) -> Result<(), reth_db::DatabaseError> {
+    pub fn flush<F: TrieCursorRwFactory, T: Into<F>>(self, factory: T) -> Result<(), F::Err> {
         if self.trie_operations.is_empty() {
             return Ok(())
         }
 
-        let mut account_trie_cursor = tx.cursor_write::<tables::AccountsTrie>()?;
-        let mut storage_trie_cursor = tx.cursor_dup_write::<tables::StoragesTrie>()?;
+        let factory: F = factory.into();
+        let mut account_trie_cursor = factory.account_trie_cursor_rw()?;
+        let mut storage_trie_cursor = factory.storage_tries_cursor_rw()?;
 
         let mut trie_operations = Vec::from_iter(self.trie_operations);
         trie_operations.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -181,7 +181,7 @@ impl TrieUpdates {
             match key {
                 TrieKey::AccountNode(nibbles) => match operation {
                     TrieOp::Delete => {
-                        if account_trie_cursor.seek_exact(nibbles)?.is_some() {
+                        if account_trie_cursor.seek_exact(nibbles.0)?.is_some() {
                             account_trie_cursor.delete_current()?;
                         }
                     }
@@ -203,8 +203,8 @@ impl TrieUpdates {
                     if !nibbles.is_empty() {
                         // Delete the old entry if it exists.
                         if storage_trie_cursor
-                            .seek_by_key_subkey(hashed_address, nibbles.clone())?
-                            .filter(|e| e.nibbles == nibbles)
+                            .seek_by_key_subkey(hashed_address, nibbles.clone().0)?
+                            .filter(|e| e.0 == nibbles.0)
                             .is_some()
                         {
                             storage_trie_cursor.delete_current()?;
